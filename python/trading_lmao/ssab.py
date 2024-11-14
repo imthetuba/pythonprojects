@@ -1,4 +1,67 @@
-# Filter for buy and sell signals
+import yfinance as yf
+import pandas as pd
+import numpy as np
+
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import StandardScaler
+import joblib
+
+# This file runs a simple random forest algo (from scilearn) to calculate whether to sell or buy
+# on a specific day regarding the SSAB stock using data from yfinance. 
+# it then plots the historical data against the prediction model to see if it indeed was 
+# a good idea (probably not since the model only looks at three things)
+
+# Step 1: Download data
+stock_data = yf.download("SSAB-A.ST", start="2018-01-01", end="2023-01-01")
+stock_data['Return'] = stock_data['Adj Close'].pct_change()
+stock_data['SMA_10'] = stock_data['Adj Close'].rolling(window=10).mean()
+stock_data['SMA_50'] = stock_data['Adj Close'].rolling(window=50).mean()
+stock_data['Volatility_10'] = stock_data['Return'].rolling(window=10).std()
+stock_data.dropna(inplace=True)
+
+# Step 2: Define target variable
+stock_data['Target'] = np.where(stock_data['Return'].shift(-1) > 0, 1, 0)
+stock_data.dropna(inplace=True)
+
+# Step 3: Feature selection and train-test split
+features = ['Return', 'SMA_10', 'SMA_50', 'Volatility_10']
+X = stock_data[features]
+y = stock_data['Target']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Step 4: Standardize features
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Step 5: Train Random Forest
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+# Generate predictions for the entire dataset to mark buy/sell signals
+stock_data['Prediction'] = rf_model.predict(scaler.transform(X))
+
+
+# Step 6: Evaluate model
+y_pred = rf_model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print("Accuracy:", accuracy)
+print(classification_report(y_test, y_pred))
+
+# Step 7: Feature importance
+feature_importances = pd.Series(rf_model.feature_importances_, index=features).sort_values(ascending=False)
+print("Feature Importances:")
+print(feature_importances)
+
+# Optional: Save the model
+joblib.dump(rf_model, 'ssab_rf_model.pkl')
+
+
+# Plotting part to see whats going on bruv
+
+#Filter for buy and sell signals
 buy_signals = stock_data[stock_data['Prediction'] == 1]
 sell_signals = stock_data[stock_data['Prediction'] == 0]
 
